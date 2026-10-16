@@ -266,6 +266,8 @@ class Jugador:
         self.mirando = 1
         self.invulnerable = 0
         self.estrella = 0
+        self.dolor = 0
+        self.feliz = 0
         self.combo = 0
         self.combo_timer = 0
         self.evento_salto = False
@@ -412,6 +414,10 @@ class Jugador:
             self.invulnerable -= 1
         if self.estrella > 0:
             self.estrella -= 1
+        if self.dolor > 0:
+            self.dolor -= 1
+        if self.feliz > 0:
+            self.feliz -= 1
         if self.combo_timer > 0:
             self.combo_timer -= 1
             if self.combo_timer == 0:
@@ -435,12 +441,98 @@ class Jugador:
         pygame.draw.rect(sup, MARRON_OSCURO, (r.x + 3 + desplazamiento, r.bottom - 7, 12, 7), border_radius=3)
         pygame.draw.rect(sup, MARRON_OSCURO, (r.right - 15 - desplazamiento, r.bottom - 7, 12, 7), border_radius=3)
         pygame.draw.rect(sup, self.color, (r.x, r.y, r.width, r.height - 5), border_radius=7)
-        pygame.draw.circle(sup, PIEL, (r.centerx, r.y + 7), 12)
-        pygame.draw.circle(sup, NEGRO, (r.centerx + 4 * self.mirando, r.y + 5), 2)
+
+        estado = self._expresion()
+        paso = math.sin(frames * 0.35) if caminando else 0.0
+        self._dibujar_brazos(sup, frames, estado, paso)
+        self._dibujar_cabeza(sup, frames, estado)
 
         if fuente_etiqueta is not None:
             etiqueta = fuente_etiqueta.render(self.nombre, True, self.color)
             sup.blit(etiqueta, etiqueta.get_rect(center=(r.centerx, r.y - 14)))
+
+    # ---- Expresiones y brazos
+    def _expresion(self):
+        if self.dolor > 0:
+            return "dolor"
+        if self.estrella > 0 or self.feliz > 0:
+            return "feliz"
+        if not self.en_suelo:
+            if self.vy < -1:
+                return "salto"
+            if self.vy > 3:
+                return "miedo"
+        return "normal"
+
+    def _dibujar_brazos(self, sup, frames, estado, paso):
+        r = self.rect
+        sy = r.y + 22
+        largo = 15
+        manga = tuple(int(c * 0.75) for c in self.color)
+        for lado, sx in ((-1, r.x + 1), (1, r.right - 1)):
+            if estado == "salto":
+                ang = lado * 2.7
+            elif estado == "miedo":
+                ang = lado * (1.9 + 0.25 * math.sin(frames * 0.5 + (lado > 0)))
+            elif estado == "feliz":
+                ang = lado * (2.6 + 0.3 * math.sin(frames * 0.4))
+            elif estado == "dolor":
+                ang = lado * (1.5 + 0.4 * math.sin(frames * 0.8))
+            elif paso:
+                ang = lado * (0.15 - 0.9 * paso)
+            else:
+                ang = lado * (0.2 + 0.04 * math.sin(frames * 0.08))
+            fin = (sx + largo * math.sin(ang), sy + largo * math.cos(ang))
+            pygame.draw.line(sup, manga, (sx, sy), fin, 6)
+            pygame.draw.circle(sup, manga, (round(sx), sy), 3)
+            pygame.draw.circle(sup, PIEL, (round(fin[0]), round(fin[1])), 4)
+
+    def _dibujar_cabeza(self, sup, frames, estado):
+        r = self.rect
+        cx, m = r.centerx, self.mirando
+        pygame.draw.circle(sup, PIEL, (cx, r.y + 7), 12)
+
+        # Gorra del color del jugador
+        pygame.draw.circle(sup, self.color, (cx, r.y + 3), 12, draw_top_left=True, draw_top_right=True)
+        pygame.draw.rect(sup, self.color, (cx if m > 0 else cx - 14, r.y + 1, 14, 4), border_radius=2)
+
+        ey, my = r.y + 8, r.y + 14.5
+        fx = cx + m * 2
+        ojos = (fx - 4, fx + 4)
+        parpadeo = estado == "normal" and frames % 160 < 6
+
+        if estado == "feliz":
+            for lado in (-1, 1):
+                pygame.draw.circle(sup, (255, 160, 160), (fx + lado * 8, round(my) - 2), 2)
+
+        for i, ex in enumerate(ojos):
+            if estado == "dolor":
+                pygame.draw.line(sup, NEGRO, (ex - 2, ey - 2), (ex + 2, ey + 2), 2)
+                pygame.draw.line(sup, NEGRO, (ex - 2, ey + 2), (ex + 2, ey - 2), 2)
+            elif estado == "feliz":
+                pygame.draw.arc(sup, NEGRO, (ex - 3, ey - 2, 6, 6), 0, math.pi, 2)
+            elif parpadeo:
+                pygame.draw.line(sup, NEGRO, (ex - 3, ey), (ex + 3, ey), 2)
+            else:
+                grande = estado in ("salto", "miedo")
+                pygame.draw.circle(sup, BLANCO, (ex, ey), 4 if grande else 3)
+                pygame.draw.circle(sup, NEGRO, (ex + m, ey), 1 if estado == "miedo" else 2)
+            if estado in ("miedo", "dolor"):  # cejas preocupadas
+                a, b = (ey - 4, ey - 7) if i == 0 else (ey - 7, ey - 4)
+                pygame.draw.line(sup, NEGRO, (ex - 3, a), (ex + 3, b), 2)
+
+        my = round(my)
+        if estado == "feliz":
+            pygame.draw.ellipse(sup, NEGRO, (fx - 5, my - 3, 10, 8))
+            pygame.draw.rect(sup, PIEL, (fx - 5, my - 3, 10, 3))
+        elif estado == "salto":
+            pygame.draw.ellipse(sup, NEGRO, (fx - 3, my - 3, 6, 7))
+        elif estado == "dolor":
+            pygame.draw.ellipse(sup, NEGRO, (fx - 4, my - 3, 8, 7))
+        elif estado == "miedo":
+            pygame.draw.arc(sup, NEGRO, (fx - 4, my - 1, 8, 6), 0, math.pi, 2)
+        else:
+            pygame.draw.arc(sup, NEGRO, (fx - 4, my - 4, 8, 6), math.pi, 2 * math.pi, 2)
 
 
 # ---------------------------------------------------------------- Enemigo
@@ -500,6 +592,12 @@ class Enemigo:
             for ox in (11, 24):
                 pygame.draw.circle(sup, BLANCO, (r.x + ox, r.y + 15), 5)
                 pygame.draw.circle(sup, NEGRO, (r.x + ox + 2 * self.direccion, r.y + 15), 2)
+            pygame.draw.line(sup, NEGRO, (r.x + 7, r.y + 7), (r.x + 15, r.y + 11), 3)
+            pygame.draw.line(sup, NEGRO, (r.x + 28, r.y + 7), (r.x + 20, r.y + 11), 3)
+            cx = r.centerx
+            pygame.draw.ellipse(sup, NEGRO, (cx - 6, r.y + 22, 12, 7))
+            pygame.draw.polygon(sup, BLANCO, [(cx - 5, r.y + 23), (cx - 2, r.y + 23), (cx - 4, r.y + 28)])
+            pygame.draw.polygon(sup, BLANCO, [(cx + 2, r.y + 23), (cx + 5, r.y + 23), (cx + 4, r.y + 28)])
             return
 
         pygame.draw.rect(sup, ROJO, r, border_radius=8)
@@ -508,6 +606,20 @@ class Enemigo:
             pygame.draw.circle(sup, NEGRO, (r.x + ox + 2 * self.direccion, r.y + 14), 2)
         pygame.draw.line(sup, NEGRO, (r.x + 4, r.y + 6), (r.x + 14, r.y + 10), 3)
         pygame.draw.line(sup, NEGRO, (r.x + 31, r.y + 6), (r.x + 21, r.y + 10), 3)
+
+        # Boca con dientes, pies y bracitos que se balancean
+        cx = r.centerx
+        pygame.draw.ellipse(sup, NEGRO, (cx - 8, r.y + 21, 16, 8))
+        pygame.draw.polygon(sup, BLANCO, [(cx - 6, r.y + 22), (cx - 2, r.y + 22), (cx - 4, r.y + 27)])
+        pygame.draw.polygon(sup, BLANCO, [(cx + 2, r.y + 22), (cx + 6, r.y + 22), (cx + 4, r.y + 27)])
+        t = (int(self.x) // 8) % 2
+        pygame.draw.ellipse(sup, MARRON_OSCURO, (r.x + 2 + t * 3, r.bottom - 5, 12, 7))
+        pygame.draw.ellipse(sup, MARRON_OSCURO, (r.right - 14 - t * 3, r.bottom - 5, 12, 7))
+        sw = 4 if t else -4
+        for lado, sx in ((-1, r.x + 1), (1, r.right - 1)):
+            fin = (sx + lado * 7, r.y + 24 + sw * lado)
+            pygame.draw.line(sup, (170, 35, 35), (sx, r.y + 22), fin, 4)
+            pygame.draw.circle(sup, (170, 35, 35), fin, 3)
 
 
 # ---------------------------------------------------------------- Objeto (power-up)
@@ -648,6 +760,8 @@ class Juego:
         for j in self.jugadores:
             if j.activo:
                 j.puntos += self.bonus
+                j.dolor = 0
+                j.feliz = 9999
                 j.vidas = min(VIDAS_MAX, j.vidas + 1)
 
         if self.nivel == len(NIVELES) - 1:
@@ -707,6 +821,7 @@ class Juego:
     def derrotar_enemigo(self, j, enemigo, rebote=True):
         enemigo.derrotar()
         j.puntos += 50
+        j.feliz = 45
         if rebote:
             j.vy = REBOTE
         cx, cy = enemigo.rect.center
@@ -726,6 +841,7 @@ class Juego:
         self.monedas.remove(moneda)
         j.combo = min(COMBO_MAX, j.combo + 1) if j.combo_timer > 0 else 1
         j.combo_timer = FRAMES_COMBO
+        j.feliz = 25
         ganancia = 10 * j.combo
         j.puntos += ganancia
         self.crear_particulas(moneda.centerx, moneda.centery, AMARILLO)
@@ -810,6 +926,7 @@ class Juego:
                     j.combo, j.combo_timer = 0, 0
                     if self.perder_vida(j):
                         j.invulnerable = FRAMES_INVULNERABLE
+                        j.dolor = 40
                         j.vy = -8
                         j.vx = 7 if j.rect.centerx >= enemigo.rect.centerx else -7
                     break
@@ -821,6 +938,7 @@ class Juego:
                 if self.perder_vida(j):
                     j.reiniciar_posicion()
                     j.invulnerable = FRAMES_INVULNERABLE
+                    j.dolor = 40
 
         # Condiciones de fin
         if not any(j.activo for j in self.jugadores):
